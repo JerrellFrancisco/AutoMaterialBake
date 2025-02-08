@@ -1,0 +1,100 @@
+bl_info = {
+    "name": "Auto Bake Procedural Materials",
+    "blender": (3, 0, 0),
+    "category": "Material",
+    "author": "ChatGPT",
+    "description": "Automatically bakes procedural materials to image textures and applies them to selected objects.",
+}
+
+import bpy
+
+def auto_bake_procedural_textures():
+    obj = bpy.context.object
+    if not obj or obj.type != 'MESH':
+        print("Select a mesh object before running the script.")
+        return
+
+    # Ensure the object has a material
+    if not obj.data.materials:
+        print("No materials found on the object.")
+        return
+
+    mat = obj.active_material
+    if not mat.use_nodes:
+        print("Material is not using nodes.")
+        return
+
+    # Create a new image texture for baking
+    image_name = f"{obj.name}_baked_texture"
+    bake_image = bpy.data.images.new(image_name, width=2048, height=2048)
+
+    # Add Image Texture node
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
+    tex_node = nodes.new(type="ShaderNodeTexImage")
+    tex_node.image = bake_image
+    tex_node.location = (-300, 300)
+
+    # Ensure the texture node is active for baking
+    mat.node_tree.nodes.active = tex_node
+
+    # Set Bake Settings
+    bpy.context.scene.render.engine = 'CYCLES'
+    bpy.context.scene.cycles.bake_type = 'COMBINED'
+    bpy.context.scene.render.bake.use_pass_direct = False
+    bpy.context.scene.render.bake.use_pass_indirect = False
+    bpy.context.scene.render.bake.use_pass_color = True
+
+    # Select the object and bake
+    bpy.ops.object.bake(type='COMBINED')
+
+    # Save the baked texture
+    bake_image.filepath_raw = "//" + image_name + ".png"
+    bake_image.file_format = 'PNG'
+    bake_image.save()
+
+    # Replace procedural materials with baked texture
+    bsdf_node = None
+    for node in nodes:
+        if node.type == 'BSDF_PRINCIPLED':
+            bsdf_node = node
+            break
+
+    if bsdf_node:
+        links.new(tex_node.outputs['Color'], bsdf_node.inputs['Base Color'])
+        print("Procedural material baked and applied successfully.")
+
+    print(f"Baked texture saved as {bake_image.filepath_raw}")
+
+# Add-on UI
+class OBJECT_PT_BakePanel(bpy.types.Panel):
+    bl_label = "Auto Bake"
+    bl_idname = "OBJECT_PT_bake_panel"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = "Auto Bake"
+
+    def draw(self, context):
+        layout = self.layout
+        layout.operator("object.auto_bake", text="Bake Procedural Textures")
+
+class OBJECT_OT_AutoBake(bpy.types.Operator):
+    bl_idname = "object.auto_bake"
+    bl_label = "Auto Bake Procedural Materials"
+    bl_description = "Automatically bakes procedural materials to textures"
+    
+    def execute(self, context):
+        auto_bake_procedural_textures()
+        return {'FINISHED'}
+
+# Register add-on
+def register():
+    bpy.utils.register_class(OBJECT_PT_BakePanel)
+    bpy.utils.register_class(OBJECT_OT_AutoBake)
+
+def unregister():
+    bpy.utils.unregister_class(OBJECT_PT_BakePanel)
+    bpy.utils.unregister_class(OBJECT_OT_AutoBake)
+
+if __name__ == "__main__":
+    register()
